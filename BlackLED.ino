@@ -1,15 +1,18 @@
+////////////////// Panama edition ////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // initial user defined settings
 //
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define NUM_OF_OUTPUTS 6
-#define MAX_NUM_LED_PER_OUTPUT 360
+#define NUM_OF_OUTPUTS 5
+#define MAX_NUM_LED_PER_OUTPUT 240
 #define NUM_CHANNEL_PER_LED 4
 
 //#define _use_FastLED  //for all types of chips but only 3 channel !!only LPD8806 implemented in code
 #define _use_octoWS2811 //for all WS2811 type chips
 
+#define blackOnOpPollTimeOut //recoment more than 20000 ms
+const static uint32_t OpPollTimeOut = 30000;
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // definitions calculated from user settings
@@ -114,6 +117,8 @@ uint8_t numUniUpdated = 0;
 unsigned long currentMillis = 0;
 unsigned long previousMillis = 0;
 
+uint32_t lastPoll = 0;
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // octoWS2811 or FastLED setup
@@ -149,8 +154,8 @@ ArtConfig config = {
 
   // These fields get overwritten by loadConfig:
   0, 0,                                 // Net (0-127) and subnet (0-15)
-  "BlackLED_6",                           // Short name
-  "BlackLED_6_port",                     // Long name
+  "BLED_RGBW_5_Pan",                           // Short name
+  "BlackLED_RGBW_5_port_Panama",                     // Long name
   num_artnet_ports, // Number of ports
   { PortTypeDmx | PortTypeOutput,
     PortTypeDmx | PortTypeOutput,
@@ -261,6 +266,7 @@ void saveConfig() {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void setup() {
+  //Serial.begin(9600);
   //saveConfig(); //<-- uncomment to force the EEPROM config to your settings on eatch reboot
   ArtConfig tempConfig = config;
   loadConfig();
@@ -344,6 +350,10 @@ void loop() {
               //T_ArtPoll* poll = (T_ArtPoll*)udp_buffer;
               //if(poll->TalkToMe & 0x2){
 
+              #ifdef blackOnOpPollTimeOut
+                lastPoll = millis();
+              #endif
+
               float tempCelsius = 25.0 + 0.17083 * (2454.19 - tempVal);
               sprintf(node.pollReport, "numOuts;%d;numUniPOut;%d;temp;%.1f;fps;%.1f;uUniPF;%.1f;", NUM_OF_OUTPUTS, num_universes_per_output, tempCelsius, fps, avgUniUpdated);
               node.createPollReply(); //create pollReply
@@ -357,10 +367,20 @@ void loop() {
               ArtDmx* dmx = (ArtDmx*)udp_buffer;
               int port = node.getAddress(dmx->SubUni, dmx->Net) - node.getStartAddress();
               if (port >= 0 && port < config.numPorts) {
+                //Serial.print("incomming port: ");
+                //Serial.print(port);
+                if(port>=4 && port<=7){
+                  port+=2;
+                }else if(port>=8){
+                  port+=4;
+                }
+                //Serial.print("  remap to: ");
+                //Serial.println(port);
                 uint16_t portOffset = port * 512/NUM_CHANNEL_PER_LED;
                 //write the dmx data to the Octo frame buffer
                 #ifdef _use_octoWS2811
                 uint32_t* dmxData = (uint32_t*) dmx->Data;
+
                 for (int i = 0; i < 128; i++) {
                   LEDS.setPixel(i + portOffset, dmxData[i]);
                 }
@@ -475,4 +495,13 @@ void loop() {
 
   // read temperature value
   tempVal = analogRead(38) * 0.01 + tempVal * 0.99;
+  #ifdef blackOnOpPollTimeOut
+    currentMillis = millis();
+    if (currentMillis - lastPoll > OpPollTimeOut) {
+      for (int i = 0; i < num_led_per_output * 8; i++) {
+        LEDS.setPixel(i, 0);
+      }
+      LEDS.show();
+    }
+  #endif
 }
